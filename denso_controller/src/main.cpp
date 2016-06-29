@@ -97,8 +97,8 @@ public:
   DensoController() :
       OpenControllersInterface::OpenController()
   {
-    prev_angle_.resize(6);
-    prev_vel_.resize(6);
+    prev_angle_.resize(7);
+    prev_vel_.resize(7);
   }
 #define SAFE_EXIT(exit_code) {                  \
     ROS_FATAL("fatal error has occurred");      \
@@ -444,7 +444,7 @@ public:
     std::vector<double> current_angle;
     std::vector<double> current_vel;
     std::vector<double> current_acc;
-    for (size_t i = 0; i < 6; i++)
+    for (size_t i = 0; i < 7; i++)
     {
       current_angle.push_back(pose->Value.DoubleArray[i]);
     }
@@ -467,8 +467,8 @@ public:
     {
       double tm = (tick.tv_sec + double(tick.tv_nsec) / NSEC_PER_SECOND)
           - (prev_time_.tv_sec + double(prev_time_.tv_nsec) / NSEC_PER_SECOND);
-      current_vel.resize(6);
-      for (size_t i = 0; i < 6; i++)
+      current_vel.resize(7);
+      for (size_t i = 0; i < 7; i++)
       {
         current_vel.at(i) = (current_angle[i] - prev_angle_[i]) / tm;
       }
@@ -477,8 +477,8 @@ public:
     {
       double tm = (tick.tv_sec + double(tick.tv_nsec) / NSEC_PER_SECOND)
           - (prev_time_.tv_sec + double(prev_time_.tv_nsec) / NSEC_PER_SECOND);
-      current_acc.resize(6);
-      for (size_t i = 0; i < 6; i++)
+      current_acc.resize(7);
+      for (size_t i = 0; i < 7; i++)
       {
         current_acc.at(i) = (current_vel[i] - prev_vel_[i]) / tm;
       }
@@ -541,7 +541,7 @@ public:
     }
 
     // memoize prev angle
-    for (size_t i = 0; i < 6; i++) {
+    for (size_t i = 0; i < 7; i++) {
         prev_angle_.at(i) = current_angle.at(i);
         prev_vel_.at(i) = current_vel.at(i);
         
@@ -582,7 +582,12 @@ public:
           it != cm_->model_.transmissions_.end(); ++it)
       { // *** js and ac must be consistent
         pr2_hardware_interface::Actuator *ac = hw_->getActuator((*it)->actuator_names_[0]);
-        ac->state_.position_ = DEG2RAD(cur_jnt[i]); // degree -> radian
+        bool is_prismatic = (*it)->actuator_names_[0].find("prismatic") != std::string::npos;
+        if (is_prismatic) {
+          ac->state_.position_ = cur_jnt[i] / 1000;
+        } else {
+          ac->state_.position_ = DEG2RAD(cur_jnt[i]); // degree -> radian
+        }
         i++;
       }
       return hr;
@@ -686,9 +691,13 @@ public:
       { // *** js and ac must be consistent
         pr2_mechanism_model::JointState *js = cm_->state_->getJointState((*it)->joint_names_[0]);
         pr2_hardware_interface::Actuator *ac = hw_->getActuator((*it)->actuator_names_[0]);
+        int armindex = it - cm_->model_.transmissions_.begin();
         // ROS_INFO("js: %f, ac: %f", js->commanded_effort_, ac->state_.position_);
         double target_angle = RAD2DEG(ac->state_.position_);
-        if (true)
+        if ((*it)->actuator_names_[0].find("prismatic") != std::string::npos) {
+          target_angle = (ac->state_.position_ + js->commanded_effort_) * 1000;
+        }
+        else if (true)
         {
           target_angle = RAD2DEG(ac->state_.position_ + js->commanded_effort_);
           // check min/max
@@ -696,14 +705,14 @@ public:
           if (RAD2DEG(cm_->state_->model_->robot_model_.getJoint((*it)->joint_names_[0])->limits->lower)
               + SAFE_OFFSET_DEG > target_angle)
           {
-            ROS_WARN("too small joint angle! %f", target_angle);
+            ROS_WARN("too small joint angle! %f for arm index %d", target_angle, armindex);
             target_angle = RAD2DEG(
                 cm_->state_->model_->robot_model_.getJoint((*it)->joint_names_[0])->limits->lower) + SAFE_OFFSET_DEG;
           }
           else if (RAD2DEG(cm_->state_->model_->robot_model_.getJoint((*it)->joint_names_[0])->limits->upper)
               - SAFE_OFFSET_DEG < target_angle)
           {
-            ROS_WARN("too large joint angle! %f", target_angle);
+            ROS_WARN("too large joint angle! %f for arm index: %d", target_angle, armindex);
             target_angle = RAD2DEG(
                 cm_->state_->model_->robot_model_.getJoint((*it)->joint_names_[0])->limits->upper) - SAFE_OFFSET_DEG;
           }
@@ -717,8 +726,8 @@ public:
         i++;
       }
     }
-    ROS_DEBUG("target  angles: %f %f %f %f %f %f", vntPose.Value.DoubleArray[0], vntPose.Value.DoubleArray[1], vntPose.Value.DoubleArray[2], vntPose.Value.DoubleArray[3], vntPose.Value.DoubleArray[4], vntPose.Value.DoubleArray[5]);
-    vntPose.Value.DoubleArray[6] = 0;
+    ROS_DEBUG("target  angles: %f %f %f %f %f %f %f", vntPose.Value.DoubleArray[0], vntPose.Value.DoubleArray[1], vntPose.Value.DoubleArray[2], vntPose.Value.DoubleArray[3], vntPose.Value.DoubleArray[4], vntPose.Value.DoubleArray[5], vntPose.Value.DoubleArray[6]);
+    //vntPose.Value.DoubleArray[6] = 0;
     vntPose.Value.DoubleArray[7] = 0;
     // send vntPose
     DensoControllerStatusPtr status;
@@ -776,7 +785,7 @@ public:
 
     }
 
-    ROS_DEBUG("current angles: %f %f %f %f %f %f", vntReturn.Value.DoubleArray[0], vntReturn.Value.DoubleArray[1], vntReturn.Value.DoubleArray[2], vntReturn.Value.DoubleArray[3], vntReturn.Value.DoubleArray[4], vntReturn.Value.DoubleArray[5]);
+    ROS_DEBUG("current angles: %f %f %f %f %f %f %f", vntReturn.Value.DoubleArray[0], vntReturn.Value.DoubleArray[1], vntReturn.Value.DoubleArray[2], vntReturn.Value.DoubleArray[3], vntReturn.Value.DoubleArray[4], vntReturn.Value.DoubleArray[5], vntReturn.Value.DoubleArray[6]);
     hw_->current_time_ = ros::Time::now(); // ???
     {
       int i = 0;
@@ -785,10 +794,19 @@ public:
       { // *** js and ac must be consistent
         pr2_mechanism_model::JointState *js = cm_->state_->getJointState((*it)->joint_names_[0]);
         pr2_hardware_interface::Actuator *ac = hw_->getActuator((*it)->actuator_names_[0]);
-        ac->state_.velocity_ = DEG2RAD(prev_vel_.at(i));
+        bool is_prismatic = (*it)->actuator_names_[0].find("prismatic") != std::string::npos;
+        if (!is_prismatic) {
+          ac->state_.velocity_ = DEG2RAD(prev_vel_.at(i));
+        } else {
+          ac->state_.velocity_ = prev_vel_.at(i) / 1000; //TODO mm -> m?
+        }
         if (!dryrunp_)
         { // if not in the dryrun mode, we just copy the vntReturn value
-          ac->state_.position_ = DEG2RAD(vntReturn.Value.DoubleArray[i]);
+          if (!is_prismatic) {
+            ac->state_.position_ = DEG2RAD(vntReturn.Value.DoubleArray[i]);
+          } else {
+            ac->state_.position_ = vntReturn.Value.DoubleArray[i] / 1000; //TODO mm -> m?
+          }
         }
         else
         { // if in the dryrun mode, we just copy the target value
@@ -1171,6 +1189,7 @@ public:
     hw_->addActuator(new pr2_hardware_interface::Actuator("j4_motor"));
     hw_->addActuator(new pr2_hardware_interface::Actuator("j5_motor"));
     hw_->addActuator(new pr2_hardware_interface::Actuator("flange_motor"));
+    hw_->addActuator(new pr2_hardware_interface::Actuator("j_gripper_0_prismatic_motor"));
     // // Create controller manager
     //pr2_controller_manager::ControllerManager cm_(ec.hw_);
     cm_ = boost::shared_ptr<pr2_controller_manager::ControllerManager>(
