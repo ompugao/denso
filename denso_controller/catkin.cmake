@@ -16,6 +16,8 @@ include_directories(include src ${Boost_INCLUDE_DIRS} ${catkin_INCLUDE_DIRS})
 set_source_files_properties(src/b-Cap.c PROPERTIES LANGUAGE CXX)
 add_executable(main src/b-Cap.c src/main.cpp)
 target_link_libraries(main ${catkin_LIBRARIES})
+add_executable(testbcap src/b-Cap.c src/testbcap.cpp)
+target_link_libraries(testbcap ${catkin_LIBRARIES})
 
 install(TARGETS main
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

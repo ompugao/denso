@@ -555,6 +555,7 @@ public:
       BCAP_HRESULT hr;
       std::vector<double> cur_jnt;
       hr = bCapCurJnt(cur_jnt);
+      ROS_WARN("a");
       BCAP_VARIANT vntPose, vntResult;
       vntPose.Type = VT_R8 | VT_ARRAY;
       vntPose.Arrays = 8;
@@ -562,9 +563,11 @@ public:
       {
         vntPose.Value.DoubleArray[i] = cur_jnt[i];
       }
+      ROS_WARN("b");
       // Fill the buffer for later use, 
       // unless fill the buffer, bCap slave will fall down 
       for (int i = 0; i < 4; i++) {
+          ROS_WARN_STREAM("c" << i);
           hr = bCapRobotSlvMove(&vntPose, &vntResult);
           if (FAILED(hr)) {
             return hr;
@@ -820,11 +823,11 @@ public:
   }
 
 
-  OpenControllersInterface::ControllerStatusPtr recoverController()
-  {
 #define CAST_STATUS(hr) \
     boost::static_pointer_cast<OpenControllersInterface::ControllerStatus>(DensoControllerStatusPtr(new DensoControllerStatus(hr)))
 
+  OpenControllersInterface::ControllerStatusPtr recoverController()
+  {
     ROS_WARN("try to recover controller...");
     u_int errorcode;
     std::string errormsg;
@@ -1146,9 +1149,45 @@ public:
     }
 
     return CAST_STATUS(BCAP_S_OK);
-#undef CAST_STATUS(hr)
   }
- 
+
+
+  OpenControllersInterface::ControllerStatusPtr moveGripper(int value) {
+    BCAP_HRESULT hr;
+    hr = bCapSlvChangeMode(0x0);
+    if (FAILED(hr)) {
+      ROS_WARN("failed to change from slvmode to normal mode");
+      //return CAST_STATUS(hr);
+    }
+    BCAP_VARIANT gripperparam, gripperresult;
+    gripperparam.Type = VT_R4 | VT_ARRAY;
+    gripperparam.Arrays = 2;
+    gripperparam.Value.FloatArray[0] = 7;
+    gripperparam.Value.FloatArray[1] = value;
+    hr = bCap_RobotExecute2(iSockFD_, lhRobot_, "DriveAEx", &gripperparam, &gripperresult);
+    if (SUCCEEDED(hr)) {
+      ROS_INFO("succeeded to open gripper");
+    } else {
+      ROS_INFO("failed to open gripper");
+    }
+    hr = bCapSlvChangeMode(0x202);
+    if (FAILED(hr)) {
+      ROS_WARN("failed to change slvmode");
+      return CAST_STATUS(hr);
+    }
+    hr = bCapFillBuffer();
+    if (FAILED(hr)) {
+      ROS_WARN("failed to fill buffer in slave mode");
+      return CAST_STATUS(hr);
+    }
+    hr = bCapReflectRealState();
+    if (FAILED(hr)) {
+      ROS_WARN("failed to reflect real state");
+      return CAST_STATUS(hr);
+    }
+  }
+#undef CAST_STATUS(hr)
+
   void setUDPTimeout(long sec, long usec)
   {
 #ifdef BCAP_CONNECTION_UDP
