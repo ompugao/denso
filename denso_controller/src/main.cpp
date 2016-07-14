@@ -197,7 +197,7 @@ public:
     BCAP_VARIANT takearmparam, takearmresult;
     takearmparam.Type = VT_I4 | VT_ARRAY;
     takearmparam.Arrays = 2;
-    ((u_int*)(&takearmparam.Value.LongValue))[0] = 0;
+    ((u_int*)(&takearmparam.Value.LongValue))[0] = 2;
     ((u_int*)(&takearmparam.Value.LongValue))[1] = 1;
     BCAP_HRESULT hr;
     //hr = bCap_RobotExecute(iSockFD_, lhRobot_, "Takearm", takearmparam, &takearmresult);
@@ -555,7 +555,6 @@ public:
       BCAP_HRESULT hr;
       std::vector<double> cur_jnt;
       hr = bCapCurJnt(cur_jnt);
-      ROS_WARN("a");
       BCAP_VARIANT vntPose, vntResult;
       vntPose.Type = VT_R8 | VT_ARRAY;
       vntPose.Arrays = 8;
@@ -563,11 +562,9 @@ public:
       {
         vntPose.Value.DoubleArray[i] = cur_jnt[i];
       }
-      ROS_WARN("b");
       // Fill the buffer for later use, 
       // unless fill the buffer, bCap slave will fall down 
       for (int i = 0; i < 4; i++) {
-          ROS_WARN_STREAM("c" << i);
           hr = bCapRobotSlvMove(&vntPose, &vntResult);
           if (FAILED(hr)) {
             return hr;
@@ -1152,39 +1149,78 @@ public:
   }
 
 
-  OpenControllersInterface::ControllerStatusPtr moveGripper(int value) {
+  OpenControllersInterface::ControllerStatusPtr moveGripper(double value) {
     BCAP_HRESULT hr;
+    ROS_INFO("turn off slavemode");
     hr = bCapSlvChangeMode(0x0);
     if (FAILED(hr)) {
       ROS_WARN("failed to change from slvmode to normal mode");
       //return CAST_STATUS(hr);
     }
-    BCAP_VARIANT gripperparam, gripperresult;
-    gripperparam.Type = VT_R4 | VT_ARRAY;
-    gripperparam.Arrays = 2;
-    gripperparam.Value.FloatArray[0] = 7;
-    gripperparam.Value.FloatArray[1] = value;
-    hr = bCap_RobotExecute2(iSockFD_, lhRobot_, "DriveAEx", &gripperparam, &gripperresult);
+    std::vector<double> cur_jnt;
+    hr = bCapCurJnt(cur_jnt);
+
+    //BCAP_VARIANT gripperparam, gripperresult;
+    //gripperparam.Type = VT_R4 | VT_ARRAY;
+    //gripperparam.Arrays = 2;
+    //gripperparam.Value.FloatArray[0] = 7;
+    //gripperparam.Value.FloatArray[1] = value;
+    //gripperparam.Type = VT_BSTR;
+    //strcpy((char*)gripperparam.Value.String, "(7,23)");
+    ROS_INFO("move gripper");
+    //hr = bCap_RobotExecute2(iSockFD_, lhRobot_, "DriveAEx", &gripperparam, &gripperresult);
+
+    std::stringstream ss;
+    ss << "@P J(" << cur_jnt[0] << ","
+      << cur_jnt[1] << ","
+      << cur_jnt[2] << ","
+      << cur_jnt[3] << ","
+      << cur_jnt[4] << ","
+      << cur_jnt[5] << ") EXA((7," << value << "))";
+
+    hr = bCap_RobotMove(iSockFD_, lhRobot_, 1, (char*) ss.str().c_str(), "NEXT");
+    //      @param  lComp           :       [in]  completion parameter
+    //      @param  pStrPose                :       [in]  Pose string in AsciiZ
+    //      @param  pstrOption              :       [in]  Option string in AsciiZ
     if (SUCCEEDED(hr)) {
-      ROS_INFO("succeeded to open gripper");
+      ROS_INFO("succeeded to move gripper");
     } else {
-      ROS_INFO("failed to open gripper");
+      ROS_INFO("failed to move gripper %02x", hr);
     }
-    hr = bCapSlvChangeMode(0x202);
-    if (FAILED(hr)) {
-      ROS_WARN("failed to change slvmode");
-      return CAST_STATUS(hr);
+
+    boost::this_thread::sleep(boost::posix_time::milliseconds(3000));
+    ROS_INFO("turn on slavemode");
+    bool b_success_turnonslavemode = false;
+    for (int i = 0; i < 10; i++) {
+      hr = bCapSlvChangeMode(0x202);
+      if (FAILED(hr)) {
+        ROS_WARN("failed to change slvmode %02x, %d", hr, i);
+        boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+        continue;
+        //return CAST_STATUS(hr);
+      }
+      b_success_turnonslavemode = true;
+      break;
     }
-    hr = bCapFillBuffer();
-    if (FAILED(hr)) {
-      ROS_WARN("failed to fill buffer in slave mode");
-      return CAST_STATUS(hr);
+    if (!b_success_turnonslavemode) {
+      ROS_WARN("COMPLETELY failed to change slvmode", hr);
     }
+    for (int i = 0; i < 5; i++) {
+      hr = bCapFillBuffer();
+      if (FAILED(hr)) {
+        ROS_WARN("failed to fill buffer in slave mode %02x", hr);
+        //return CAST_STATUS(hr);
+        continue;
+      }
+      break;
+    }
+    ROS_INFO("reflect real state");
     hr = bCapReflectRealState();
     if (FAILED(hr)) {
-      ROS_WARN("failed to reflect real state");
-      return CAST_STATUS(hr);
+      ROS_WARN("failed to reflect real state %02x", hr);
+      //return CAST_STATUS(hr);
     }
+    return CAST_STATUS(hr);
   }
 #undef CAST_STATUS(hr)
 
